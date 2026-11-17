@@ -91,3 +91,19 @@ th { color: var(--muted); font-weight: 500; }
 }
 .muted { color: var(--muted); }
 .panel { margin-top: 1rem; padding-top: 0.5rem; border-top: 1px dashed var(--line); }
+.chip {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 2px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 1px solid var(--line);
+  margin-left: 0.35rem;
+}
+.chip-ok { color: #062218; background: var(--accent); border-color: var(--accent); }
+.chip-idle { color: var(--muted); border-color: var(--muted); }
+.chip-block { color: var(--danger); border-color: var(--danger); }
+.chip-fail { color: #ffd27a; border-color: #ffd27a; }
+.cell-actions { white-space: nowrap; }
+.cell-actions button { margin-left: 0.3rem; }
+code { color: var(--accent); font-size: 0.82rem; }

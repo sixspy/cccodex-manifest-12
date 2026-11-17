@@ -73,6 +73,48 @@ CREATE TABLE IF NOT EXISTS visibility_reports (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 导出队列：一条导出任务一个凭证；成功产物按 (批次,凭证) 唯一，防双写
+CREATE TABLE IF NOT EXISTS export_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id INTEGER NOT NULL,
+  credential TEXT NOT NULL CHECK (credential IN ('manifest_package','snapshot_table')),
+  status TEXT NOT NULL CHECK (status IN ('已生成','已拦截','失败')),
+  target_name TEXT NOT NULL DEFAULT '',
+  package_sha256 TEXT NOT NULL DEFAULT '',
+  fingerprint_sha256 TEXT NOT NULL DEFAULT '',
+  object_count INTEGER NOT NULL DEFAULT 0,
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(batch_id) REFERENCES landing_batches(id)
+);
+
+-- 每批每凭证最多一份成功导出（失败/拦截记录可多条，便于留痕）
+CREATE UNIQUE INDEX IF NOT EXISTS idx_export_jobs_one_success
+ON export_jobs(batch_id, credential) WHERE status = '已生成';
+
+-- 下游仓本机落库记录与解析出的对象指纹
+CREATE TABLE IF NOT EXISTS downstream_landings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  export_job_id INTEGER NOT NULL UNIQUE,
+  target_name TEXT NOT NULL,
+  package_sha256 TEXT NOT NULL,
+  object_count INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(export_job_id) REFERENCES export_jobs(id)
+);
+
+CREATE TABLE IF NOT EXISTS downstream_objects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  landing_id INTEGER NOT NULL,
+  batch_id INTEGER NOT NULL,
+  object_key TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  byte_size INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(landing_id, object_key),
+  FOREIGN KEY(landing_id) REFERENCES downstream_landings(id)
+);
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

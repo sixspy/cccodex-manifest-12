@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 .pytest_cache/
 instance/*.db
+instance/exports/
 .env

@@ -11,13 +11,20 @@ from app.config import Config
 from app.db import init_db
 from app.services import (
     close_batch,
+    create_export,
+    get_appendix,
     get_batch,
+    get_success_export,
     list_batches,
+    list_exports,
+    list_landings,
     list_objects,
     list_reports,
+    land_export,
     register_object,
     run_visibility,
 )
+from app.services.exports import ENABLED_CREDENTIAL
 from app.services.objects import ServiceError
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -110,7 +117,8 @@ async def api_meta(request: Request) -> dict:
     return {
         "lab_name": Config.LAB_NAME,
         "product_line": "cc-manifest-lab",
-        "chain": ["落地批次", "对象登记", "清单闭合", "可见性对账"],
+        "chain": ["落地批次", "对象登记", "清单闭合", "可见性对账", "清单导出", "下游落库"],
+        "export_credential": ENABLED_CREDENTIAL,
     }
 
 
@@ -126,7 +134,11 @@ async def api_batch_detail(request: Request, batch_id: int) -> dict:
     batch = get_batch(batch_id)
     if not batch:
         raise HTTPException(status_code=404, detail="批次不存在")
-    return {"batch": batch, "objects": list_objects(batch_id)}
+    return {
+        "batch": batch,
+        "objects": list_objects(batch_id),
+        "export": get_success_export(batch_id),
+    }
 
 
 @post("/api/batches/{batch_id:int}/objects")
@@ -189,6 +201,74 @@ async def api_run_report(request: Request) -> dict:
     )
 
 
+@post("/api/batches/{batch_id:int}/export")
+async def api_export(request: Request, batch_id: int) -> Response:
+    require_user(request)
+    body = await request.json()
+    credential = str(body.get("credential", ENABLED_CREDENTIAL)) or ENABLED_CREDENTIAL
+    try:
+        job = create_export(batch_id, credential=credential)
+    except ServiceError as exc:
+        return Response(
+            content={"ok": False, "error": exc.message},
+            status_code=exc.status_code,
+            media_type="application/json",
+        )
+    return Response(
+        content={"ok": True, "job": job},
+        status_code=200,
+        media_type="application/json",
+    )
+
+
+@get("/api/exports")
+async def api_exports(request: Request) -> dict:
+    require_user(request)
+    return {"items": list_exports()}
+
+
+@get("/api/exports/{job_id:int}/appendix")
+async def api_appendix(request: Request, job_id: int) -> Response:
+    require_user(request)
+    try:
+        appendix = get_appendix(job_id)
+    except ServiceError as exc:
+        return Response(
+            content={"ok": False, "error": exc.message},
+            status_code=exc.status_code,
+            media_type="application/json",
+        )
+    return Response(
+        content={"ok": True, "appendix": appendix},
+        status_code=200,
+        media_type="application/json",
+    )
+
+
+@post("/api/exports/{job_id:int}/land")
+async def api_land(request: Request, job_id: int) -> Response:
+    require_user(request)
+    try:
+        landing = land_export(job_id)
+    except ServiceError as exc:
+        return Response(
+            content={"ok": False, "error": exc.message},
+            status_code=exc.status_code,
+            media_type="application/json",
+        )
+    return Response(
+        content={"ok": True, "landing": landing},
+        status_code=200,
+        media_type="application/json",
+    )
+
+
+@get("/api/downstream-landings")
+async def api_landings(request: Request) -> dict:
+    require_user(request)
+    return {"items": list_landings()}
+
+
 app = Litestar(
     route_handlers=[
         root,
@@ -203,6 +283,11 @@ app = Litestar(
         api_close,
         api_reports,
         api_run_report,
+        api_export,
+        api_exports,
+        api_appendix,
+        api_land,
+        api_landings,
         create_static_files_router(path="/static", directories=[str(STATIC)]),
     ],
     on_startup=[_on_startup],
